@@ -718,7 +718,7 @@ function normalizeDateStr(d) {
 
 async function loadData(){
   try{
-    const response = await fetch('data.json?v=' + Date.now(), { cache: "no-store" });
+    const response = await fetch('cpd_data.json?v=' + Date.now(), { cache: "no-store" });
     if(!response.ok) throw new Error('HTTP ' + response.status);
     const payload = await response.json();
 
