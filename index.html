@@ -536,12 +536,12 @@ td.r{
 
   <select id="f-type" onchange="handleFunctionalChange()">
     <option value="cpd">CPD Breach</option>
-    <option value="all">Functional Breach</option>
+    <option value="cpd">Functional Breach</option>
   </select>
 </div>
 
   <div class="ptabs" id="tp-drr">
-  <div class="pt on" onclick="setDrrMode('all',this)">All DRR</div>
+  <div class="pt on" onclick="setDrrMode('cpd',this)">All DRR</div>
   <div class="pt" onclick="setDrrMode('lt500',this)">&lt; 500 DRR</div>
   <div class="pt" onclick="setDrrMode('gte500',this)">≥ 500 DRR</div>
 </div>
@@ -668,7 +668,7 @@ const BD = 'Dispatch breach';
 const ALL = [BA,BE,BR,BD];
 const PICKUP = [BA,BE,BR];
 
-let drrMode = 'all';
+let drrMode = 'cpd';
 let RAW = [];
 let CPD_RAW = [];
 let PICKED_MAP = {}; 
@@ -708,7 +708,7 @@ function N(num) {
 
   const selectedValue = document.getElementById('f-type').value;
 
-  if(selectedValue === 'all'){
+  if(selectedValue === 'cpd'){
     window.location.href = 'https://biswajeetpvc-sudo.github.io/fm-breach-dashboard/';
     return;
   }
@@ -724,7 +724,7 @@ function N(num) {
 }
 
   function filterByDrr(rows){
-  if(drrMode === 'all') return rows;
+  if(drrMode === 'cpd') return rows;
   if(drrMode === 'lt500') return rows.filter(r => (r.p || 0) < 500);
   if(drrMode === 'gte500') return rows.filter(r => (r.p || 0) >= 500);
   return rows;
@@ -942,7 +942,7 @@ function buildDateList(){
 
       // ─────────────────────────────────────
       // CASE 2: Current state = ALL DATES
-      // Convert implicit "all" into explicit
+      // Convert implicit "cpd" into explicit
       // selection before changing one checkbox
       // ─────────────────────────────────────
       else if(selectedDates.size === 0){
@@ -1178,7 +1178,7 @@ function pop(id,vals){
 
 function resetFilters(){
   ['f-zone','f-gm','f-rm','f-am','f-ph'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('f-type').value = 'all';
+  document.getElementById('f-type').value = 'cpd';
   selectedDates = new Set();
   buildDateList();
   applyFilters();
