@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FM CPD Breach Dashboard</title>
+<title>FM Functional Breach Dashboard</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -463,7 +463,7 @@ td.r{
 
 <div class="hdr">
   <div>
-    <div class="hdr-title">🚚 FM CPD Breach Dashboard</div>
+    <div class="hdr-title">🚚 FM Functional Breach Dashboard</div>
     <div class="hdr-meta" id="hdr-meta">Loading...</div>
   </div>
 
@@ -532,12 +532,20 @@ td.r{
   </div>
 
   <div class="fg">
-    <label>CPD</label>
-    <select id="f-type" onchange="applyFilters()">
-      <option value="all">CPD (All)</option>
-      <!-- <option value="cpd">CPD Breach only</option> -->
-    </select>
-  </div>
+  <label>Functional / CPD</label>
+
+  <select id="f-type" onchange="handleFunctionalChange()">
+    <option value="all">Functional Breach</option>
+    <option value="cpd">CPD Breach</option>
+  </select>
+</div>
+
+  <div class="ptabs" id="tp-drr">
+  <div class="pt on" onclick="setDrrMode('all',this)">All DRR</div>
+  <div class="pt" onclick="setDrrMode('lt500',this)">&lt; 500 DRR</div>
+  <div class="pt" onclick="setDrrMode('gte500',this)">≥ 500 DRR</div>
+</div>
+
 
   <button class="btn-reset" onclick="resetFilters()">Reset</button>
 
@@ -660,6 +668,7 @@ const BD = 'Dispatch breach';
 const ALL = [BA,BE,BR,BD];
 const PICKUP = [BA,BE,BR];
 
+let drrMode = 'all';
 let RAW = [];
 let CPD_RAW = [];
 let PICKED_MAP = {}; 
@@ -687,11 +696,47 @@ function N(num) {
   return (num || 0).toLocaleString();
 }
 
-function pct(t, p) {
-  if (!p || p === 0) {
-    return t > 0 ? '100.00%' : '0.00%';
+// function pct(t, p) {
+//   if (!p || p === 0) {
+//     return t > 0 ? '100.00%' : '0.00%';
+//   }
+//   return ((t / p) * 100).toFixed(2) + '%';
+// }
+
+
+  function handleFunctionalChange(){
+
+  const selectedValue = document.getElementById('f-type').value;
+
+  if(selectedValue === 'all'){
+    window.location.href = 'https://biswajeetpvc-sudo.github.io/fm-breach-dashboard/';
+    return;
   }
-  return ((t / p) * 100).toFixed(2) + '%';
+
+  applyFilters();
+}
+
+  function setDrrMode(mode, el){
+  drrMode = mode;
+  document.getElementById('tp-drr').querySelectorAll('.pt').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  applyFilters(); // re-run filters and rendering
+}
+
+  function filterByDrr(rows){
+  if(drrMode === 'all') return rows;
+  if(drrMode === 'lt500') return rows.filter(r => (r.p || 0) < 500);
+  if(drrMode === 'gte500') return rows.filter(r => (r.p || 0) >= 500);
+  return rows;
+}
+
+  
+
+  function pct(d) {
+  const numerator = (d.a || 0) + (d.e || 0) + (d.ar || 0) + (d.d || 0);
+  const denominator = (d.p || 0) + numerator;
+  if (denominator === 0) return '0.00%';
+  return ((numerator / denominator) * 100).toFixed(2) + '%';
 }
 
 function setS(type, msg) {
@@ -737,7 +782,7 @@ async function loadData(){
     setS('err', 'Failed to load dataset: ' + e.message);
   }
 }
-
+  
 function dv(s){
   if(!s) return 0;
   const p = String(s).trim().split(/[-/]/);
@@ -864,9 +909,14 @@ function buildFilters(){
   buildDateList();
 }
 
+// ─────────────────────────────────────────────
+// DATE FILTER
+// ─────────────────────────────────────────────
+
 function buildDateList(){
   const list = document.getElementById('date-list');
   list.innerHTML = '';
+
   const active = activeDates();
 
   DATES.forEach(d => {
@@ -876,17 +926,57 @@ function buildDateList(){
     const chk = document.createElement('input');
     chk.type = 'checkbox';
     chk.value = d;
-    chk.checked = selectedDates.size === 0 || active.has(d);
+
+    // Show checkbox according to currently active dates
+    chk.checked = active.has(d);
 
     chk.onchange = () => {
-      if(selectedDates.size === 0) selectedDates = new Set(DATES);
-      if(chk.checked) selectedDates.add(d);
-      else selectedDates.delete(d);
-      
-      if(selectedDates.size === DATES.length) selectedDates = new Set();
-      
+
+      // ─────────────────────────────────────
+      // CASE 1: Current state = NONE
+      // Remove __none__ before selecting a date
+      // ─────────────────────────────────────
+      if(selectedDates.has('__none__')){
+        selectedDates = new Set();
+      }
+
+      // ─────────────────────────────────────
+      // CASE 2: Current state = ALL DATES
+      // Convert implicit "all" into explicit
+      // selection before changing one checkbox
+      // ─────────────────────────────────────
+      else if(selectedDates.size === 0){
+        selectedDates = new Set(DATES);
+      }
+
+      // Add or remove clicked date
+      if(chk.checked){
+        selectedDates.add(d);
+      } else {
+        selectedDates.delete(d);
+      }
+
+      // ─────────────────────────────────────
+      // If every date is selected,
+      // represent it as "All Dates"
+      // ─────────────────────────────────────
+      if(selectedDates.size === DATES.length){
+        selectedDates = new Set();
+      }
+
+      // ─────────────────────────────────────
+      // If no date remains selected,
+      // represent it as "None selected"
+      // ─────────────────────────────────────
+      if(selectedDates.size === 0){
+        selectedDates = new Set(['__none__']);
+      }
+
       updateDateBtnLabel();
       applyFilters();
+
+      // Refresh checkbox UI
+      refreshDateCheckboxes();
     };
 
     item.appendChild(chk);
@@ -897,42 +987,183 @@ function buildDateList(){
   updateDateBtnLabel();
 }
 
+
+// Refresh only checkbox states
+function refreshDateCheckboxes(){
+
+  const active = activeDates();
+
+  document
+    .querySelectorAll('#date-list input[type="checkbox"]')
+    .forEach(chk => {
+      chk.checked = active.has(chk.value);
+    });
+}
+
+
+// Select All
 function selectAllDates(){
+
+  // Empty set represents ALL dates
   selectedDates = new Set();
+
   buildDateList();
   applyFilters();
 }
 
+
+// Select None
 function clearAllDates(){
+
+  // Special marker represents NO dates
   selectedDates = new Set(['__none__']);
+
   buildDateList();
   applyFilters();
 }
 
+
+// Update date button text
 function updateDateBtnLabel(){
+
   const lbl = document.getElementById('date-btn-label');
-  if(selectedDates.size === 0) lbl.textContent = 'All Dates';
-  else if(selectedDates.has('__none__')) lbl.textContent = 'None selected';
-  else if(selectedDates.size === 1) lbl.textContent = [...selectedDates][0];
-  else lbl.textContent = selectedDates.size + ' dates selected';
+
+  // Empty set = All Dates
+  if(selectedDates.size === 0){
+    lbl.textContent = 'All Dates';
+    return;
+  }
+
+  // Special None state
+  if(selectedDates.has('__none__')){
+    lbl.textContent = 'None selected';
+    return;
+  }
+
+  // One selected date
+  if(selectedDates.size === 1){
+    lbl.textContent = [...selectedDates][0];
+    return;
+  }
+
+  // Multiple selected dates
+  lbl.textContent = selectedDates.size + ' dates selected';
 }
 
+
+// Open / close date dropdown
 function toggleDateDD(e){
+
   e.stopPropagation();
-  document.getElementById('date-dd').classList.toggle('open');
+
+  document
+    .getElementById('date-dd')
+    .classList
+    .toggle('open');
 }
 
+
+// Close dropdown when clicking outside
 document.addEventListener('click', e => {
-  if(!document.getElementById('date-fg').contains(e.target)){
-    document.getElementById('date-dd').classList.remove('open');
+
+  const dateFg = document.getElementById('date-fg');
+
+  if(dateFg && !dateFg.contains(e.target)){
+    document
+      .getElementById('date-dd')
+      .classList
+      .remove('open');
   }
 });
 
+
+// Return the actual active dates
 function activeDates(){
-  if(selectedDates.size === 0) return new Set(DATES);
-  if(selectedDates.has('__none__')) return new Set();
-  return selectedDates;
+
+  // Empty set means ALL dates
+  if(selectedDates.size === 0){
+    return new Set(DATES);
+  }
+
+  // __none__ means no dates
+  if(selectedDates.has('__none__')){
+    return new Set();
+  }
+
+  // Otherwise return selected dates
+  return new Set(selectedDates);
 }
+  
+
+// function buildDateList(){
+//   const list = document.getElementById('date-list');
+//   list.innerHTML = '';
+//   const active = activeDates();
+
+//   DATES.forEach(d => {
+//     const item = document.createElement('label');
+//     item.className = 'date-item';
+
+//     const chk = document.createElement('input');
+//     chk.type = 'checkbox';
+//     chk.value = d;
+//     chk.checked = selectedDates.size === 0 || active.has(d);
+
+//     chk.onchange = () => {
+//       if(selectedDates.size === 0) selectedDates = new Set(DATES);
+//       if(chk.checked) selectedDates.add(d);
+//       else selectedDates.delete(d);
+      
+//       if(selectedDates.size === DATES.length) selectedDates = new Set();
+      
+//       updateDateBtnLabel();
+//       applyFilters();
+//     };
+
+//     item.appendChild(chk);
+//     item.appendChild(document.createTextNode(d));
+//     list.appendChild(item);
+//   });
+
+//   updateDateBtnLabel();
+// }
+
+// function selectAllDates(){
+//   selectedDates = new Set();
+//   buildDateList();
+//   applyFilters();
+// }
+
+// function clearAllDates(){
+//   selectedDates = new Set(['__none__']);
+//   buildDateList();
+//   applyFilters();
+// }
+
+// function updateDateBtnLabel(){
+//   const lbl = document.getElementById('date-btn-label');
+//   if(selectedDates.size === 0) lbl.textContent = 'All Dates';
+//   else if(selectedDates.has('__none__')) lbl.textContent = 'None selected';
+//   else if(selectedDates.size === 1) lbl.textContent = [...selectedDates][0];
+//   else lbl.textContent = selectedDates.size + ' dates selected';
+// }
+
+// function toggleDateDD(e){
+//   e.stopPropagation();
+//   document.getElementById('date-dd').classList.toggle('open');
+// }
+
+// document.addEventListener('click', e => {
+//   if(!document.getElementById('date-fg').contains(e.target)){
+//     document.getElementById('date-dd').classList.remove('open');
+//   }
+// });
+
+// function activeDates(){
+//   if(selectedDates.size === 0) return new Set(DATES);
+//   if(selectedDates.has('__none__')) return new Set();
+//   return selectedDates;
+// }
 
 function pop(id,vals){
   const el = document.getElementById(id);
@@ -1258,8 +1489,10 @@ function renderSec(sec){
   });
 
   const ss = sortState[sec];
-  const hubRows = sortRows(Object.values(agg), ss.col, ss.asc, buckets, periodDays);
-
+const hubRows = filterByDrr(
+  sortRows(Object.values(agg), ss.col, ss.asc, buckets, periodDays)
+);
+  
   const gt = { p:0, a:0, e:0, ar:0, d:0, t:0 };
   hubRows.forEach(r => { gt.p += r.p; gt.a += r.a; gt.e += r.e; gt.ar += r.ar; gt.d += r.d; gt.t += r.t; });
 
@@ -1300,17 +1533,31 @@ function renderSec(sec){
     if(sR) html += '<td class="r">' + formatValue(d.ar) + '</td>';
     if(sD) html += '<td class="r">' + formatValue(d.d) + '</td>';
     html += '<td class="r" style="color:var(--blue);font-weight:700">' + formatValue(d.t) + '</td>';
-    html += '<td class="r">' + pct(d.t, d.p) + '</td>';
+    // html += '<td class="r">' + pct(d.t, d.p) + '</td>';
+    html += '<td class="r">' + pct(d) + '</td>';
     return html;
   };
 
+  // const getSuggText = d => {
+  //   if (!d.t || d.t === 0) {
+  //     return 'No buffer required';
+  //   }
+  //   const avgPickup = ((d.a || 0) + (d.e || 0) + (d.ar || 0)) / periodDays;
+  //   const avgDispatch = (d.d || 0) / periodDays;
+  //   return avgPickup >= avgDispatch ? 'Take 24 hrs buffer' : 'Take 4 hrs buffer';
+
   const getSuggText = d => {
-    if (!d.t || d.t === 0) {
-      return 'No buffer required';
-    }
-    const avgPickup = ((d.a || 0) + (d.e || 0) + (d.ar || 0)) / periodDays;
-    const avgDispatch = (d.d || 0) / periodDays;
-    return avgPickup >= avgDispatch ? 'Take 24 hrs buffer' : 'Take 4 hrs buffer';
+  if (!d.t || d.t === 0) {
+    return 'No buffer required';
+  }
+  // Calculate ratio of Dispatch Breach to Daily Total
+  const ratio = (d.d || 0) / (d.t || 1);
+
+  // If Dispatch Breach / Daily Total > 75%, take 4 hrs buffer
+  if (ratio > 0.75) {
+    return 'Take 4 hrs buffer';
+  }
+  return 'Take 24 hrs buffer';
   };
 
   const getSuggStyle = sugg => {
@@ -1363,7 +1610,7 @@ function renderSec(sec){
         if(sR) subHtml += '<td class="r">' + N(dd.ar) + '</td>';
         if(sD) subHtml += '<td class="r">' + N(dd.d) + '</td>';
         subHtml += '<td class="r" style="font-weight:700; color:var(--red);">' + N(dd.t) + '</td>' +
-          '<td class="r">' + pct(dd.t, dd.p) + '</td>' +
+          '<td class="r">' + pct(dd) + '</td>' +
           '</tr>';
       });
 
