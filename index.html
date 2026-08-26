@@ -1285,9 +1285,9 @@ function renderKPIs(){
   // const { overallTotal } = computeHubPickups(ds, PICKED_MAP);
   // const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
 
-  // Just take picked from the dataset once
-  const pickedCount = ds.length ? ds[0].p : 0;
-  const finalPicked = isAvg ? (pickedCount / periodDays) : pickedCount;
+  const pickedCounts = getPickedCounts(ds);
+  const totalPicked = Object.values(pickedCounts).reduce((sum, v) => sum + v, 0);
+  const finalPicked = isAvg ? (totalPicked / periodDays) : totalPicked;
 
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
@@ -1423,6 +1423,16 @@ function sortRows(rows,col,asc,buckets,periodDays){
     return asc ? av - bv : bv - av;
   });
 }
+
+  function getPickedCounts(rows) {
+  const dates = Object.keys(rows[0]).filter(k => k !== 'Hub');
+  const result = {};
+  dates.forEach(date => {
+    result[date] = rows[0][date]; // take from first hub only
+  });
+  return result;
+}
+
 
 function renderSec(sec){
   const isDispatchSec = (sec === 2);
