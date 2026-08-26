@@ -1299,7 +1299,12 @@ ds.forEach(r => {
 
 // Sum across unique dates
 const promiseCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
-const finalPromise = isAvg ? (promiseCount / periodDays) : promiseCount;
+
+// ✅ Define finalPicked in the same scope
+const finalPicked = isAvg ? (promiseCount / periodDays) : promiseCount;
+
+// Now you can safely use finalPicked here
+console.log("Final Picked:", finalPicked);
 
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
