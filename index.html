@@ -1285,21 +1285,21 @@ function renderKPIs(){
   // const { overallTotal } = computeHubPickups(ds, PICKED_MAP);
   // const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
 
- // Deduplicate: take picked count once per date
-  const byDate = {};
-  ds.forEach(r => {
-    Object.keys(r).forEach(k => {
-      if (k !== 'Hub') {
-        if (!byDate[k]) {
-          byDate[k] = r[k]; // take from first hub only
-        }
+ // Deduplicate: take promise count once per date (ignore duplicate hubs)
+const byDate = {};
+ds.forEach(r => {
+  Object.keys(r).forEach(k => {
+    if (k !== 'Hub') {
+      if (!byDate[k]) {
+        byDate[k] = r[k]; // take the numeric promise value once
       }
-    });
+    }
   });
-  
-  // Sum across unique dates
-  const pickedCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
-const finalPicked = isAvg ? (pickedCount / periodDays) : pickedCount;
+});
+
+// Sum across unique dates
+const promiseCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
+const finalPromise = isAvg ? (promiseCount / periodDays) : promiseCount;
 
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
