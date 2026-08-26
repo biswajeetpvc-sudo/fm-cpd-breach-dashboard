@@ -1286,24 +1286,28 @@ function renderKPIs(){
   // const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
 
  // Deduplicate: take promise count once per date (ignore duplicate hubs)
-const byDate = {};
-ds.forEach(r => {
-  Object.keys(r).forEach(k => {
-    if (k !== 'Hub') {
-      if (!byDate[k]) {
-        byDate[k] = r[k]; // take the numeric promise value once
+function computeFinalPicked(ds, isAvg, periodDays) {
+  const byDate = {};
+
+  ds.forEach(r => {
+    Object.keys(r).forEach(k => {
+      if (k !== 'Hub') {
+        if (!byDate[k]) {
+          byDate[k] = r[k]; // take numeric promise value once
+        }
       }
-    }
+    });
   });
-});
 
-// Sum across unique dates
-const promiseCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
+  // Sum across unique dates
+  const promiseCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
 
-// ✅ Define finalPicked in the same scope
-const finalPicked = isAvg ? (promiseCount / periodDays) : promiseCount;
+  // Return finalPicked directly
+  return isAvg ? (promiseCount / periodDays) : promiseCount;
+}
 
-// Now you can safely use finalPicked here
+// ✅ Usage
+const finalPicked = computeFinalPicked(ds, isAvg, periodDays);
 console.log("Final Picked:", finalPicked);
 
 
