@@ -1287,20 +1287,14 @@ function renderKPIs(){
 
  // Deduplicate: take promise count once per date (ignore duplicate hubs)
 function computeFinalPicked(ds, isAvg, periodDays) {
-  const byDate = {};
+  // Take the first row (any hub, since values are identical)
+  const firstRow = ds[0];
 
-  ds.forEach(r => {
-    Object.keys(r).forEach(k => {
-      if (k !== 'Hub') {
-        if (!byDate[k]) {
-          byDate[k] = r[k]; // take numeric promise value once
-        }
-      }
-    });
-  });
+  // Collect all date keys (skip Hub column)
+  const dateKeys = Object.keys(firstRow).filter(k => k !== 'Hub');
 
-  // Sum across unique dates
-  const promiseCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
+  // Sum the promise counts for those dates
+  const promiseCount = dateKeys.reduce((sum, k) => sum + firstRow[k], 0);
 
   // Return finalPicked directly
   return isAvg ? (promiseCount / periodDays) : promiseCount;
@@ -1309,6 +1303,7 @@ function computeFinalPicked(ds, isAvg, periodDays) {
 // ✅ Usage
 const finalPicked = computeFinalPicked(ds, isAvg, periodDays);
 console.log("Final Picked:", finalPicked);
+
 
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
