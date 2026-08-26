@@ -1300,7 +1300,7 @@ function renderKPIs(){
       '<div class="k-val">' + fmt(totalBreaches) + '</div>' +
     '</div>' +
     '<div class="kpi k5">' +
-      '<div class="k-lbl">' + modeLabel + 'DRR</div>' +
+      '<div class="k-lbl">' + modeLabel + 'Pan India Promise</div>' +
       '<div class="k-val">' + fmt(finalPicked) + '</div>' +
     '</div>' +
     '<div class="kpi k1">' +
@@ -1512,7 +1512,7 @@ const hubRows = filterByDrr(
   const prefix = showAverage ? 'Avg ' : '';
   let numCI = 5;
 
-  let header = '<thead><tr>' + thC('Hub',0) + thC('Zone',1) + thC('GM',2) + thC('RM',3) + thC('AM',4) + thC(prefix + 'DRR', numCI++, 'r');
+  let header = '<thead><tr>' + thC('Hub',0) + thC('Zone',1) + thC('GM',2) + thC('RM',3) + thC('AM',4) + thC(prefix + 'Pan India Promise', numCI++, 'r');
   if(sA) header += thC(prefix + 'Attempt Breach', numCI++, 'r');
   if(sE) header += thC(prefix + 'EKL Issue', numCI++, 'r');
   if(sR) header += thC(prefix + 'Auto Reset', numCI++, 'r');
