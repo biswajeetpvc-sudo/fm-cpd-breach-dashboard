@@ -1520,8 +1520,34 @@ function renderKPIs(){
     return isAvg ? (sum / periodDays) : sum;
   };
 
-  const { overallTotal } = computeHubPickups(ds, PICKED_MAP);
-  const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
+  // const { overallTotal } = computeHubPickups(ds, PICKED_MAP);
+  // const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
+
+
+  // Deduplicate: take promise count once per date (ignore duplicate hubs)
+  function computeFinalPicked(ds, isAvg, periodDays) {
+  const byDate = {};
+
+  ds.forEach(r => {
+    Object.keys(r).forEach(k => {
+      if (k !== 'Hub') {
+        if (!byDate[k]) {
+          byDate[k] = r[k]; // take numeric promise value once
+        }
+      }
+    });
+  });
+
+  // Sum across unique dates
+  const promiseCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
+
+  // Return finalPicked directly
+  return isAvg ? (promiseCount / periodDays) : promiseCount;
+}
+
+// ✅ Usage
+const finalPicked = computeFinalPicked(ds, isAvg, periodDays);
+console.log("Final Picked:", finalPicked);
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
   const modeLabel = isAvg ? 'Avg Daily ' : '';
