@@ -496,6 +496,36 @@ td.r{
     </div>
   </div>
 
+  <div class="fg" id="state-fg">
+    <label>State</label>
+    <button class="date-btn" onclick="toggleMultiDD(event,'state-dd')" style="min-width:130px">
+      <span id="state-btn-label">All States</span>
+      <span>▼</span>
+    </button>
+    <div class="date-dropdown" id="state-dd">
+      <div class="date-dropdown-header">
+        <button onclick="selectAllMulti('state')">All</button>
+        <button onclick="clearAllMulti('state')">None</button>
+      </div>
+      <div id="state-list"></div>
+    </div>
+  </div>
+
+  <div class="fg" id="city-fg">
+    <label>City</label>
+    <button class="date-btn" onclick="toggleMultiDD(event,'city-dd')" style="min-width:130px">
+      <span id="city-btn-label">All Cities</span>
+      <span>▼</span>
+    </button>
+    <div class="date-dropdown" id="city-dd">
+      <div class="date-dropdown-header">
+        <button onclick="selectAllMulti('city')">All</button>
+        <button onclick="clearAllMulti('city')">None</button>
+      </div>
+      <div id="city-list"></div>
+    </div>
+  </div>
+
   <div class="fg">
     <label>Zone</label>
     <select id="f-zone" onchange="applyFilters()">
@@ -648,12 +678,31 @@ td.r{
         <div class="pt on" onclick="setP(2,1,this)">D-1</div>
         <div class="pt" onclick="setP(2,3,this)">L3D</div>
         <div class="pt" onclick="setP(2,5,this)">L5D</div>
-        <div class="pt" onclick="setP(2,7,this)">L5D</div>
+        <div class="pt" onclick="setP(2,7,this)">L7D</div>
         <div class="pt" onclick="setP(2,999,this)">Overall</div>
       </div>
     </div>
     <div class="tw">
       <table id="t2"></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">
+        <span class="dot" style="background:var(--purple,#7c3aed)"></span>
+        GM View
+      </div>
+      <div class="ptabs" id="tp-gm">
+        <div class="pt on" onclick="setGmP(1,this)">D-1</div>
+        <div class="pt" onclick="setGmP(3,this)">L3D</div>
+        <div class="pt" onclick="setGmP(5,this)">L5D</div>
+        <div class="pt" onclick="setGmP(7,this)">L7D</div>
+        <div class="pt" onclick="setGmP(999,this)">Overall</div>
+      </div>
+    </div>
+    <div class="tw">
+      <table id="t-gm"></table>
     </div>
   </div>
 
@@ -674,6 +723,7 @@ let CPD_RAW = [];
 let PICKED_MAP = {}; 
 let CPD_PICKED_MAP = {}; 
 let HUB_MAP = {}; 
+let CAPACITY_MAP = {}; // hubNorm -> { date -> { capacity, consumption } }
 let DATES = [];
 let filtered = [];
 let cpdFiltered = [];
@@ -782,7 +832,7 @@ async function loadData(){
     setS('err', 'Failed to load dataset: ' + e.message);
   }
 }
-  
+
 function dv(s){
   if(!s) return 0;
   const p = String(s).trim().split(/[-/]/);
@@ -833,6 +883,8 @@ function processDataSet(payload) {
     if (!HUB_MAP[hubNorm] || !HUB_MAP[hubNorm].zone) {
       HUB_MAP[hubNorm] = {
         ph: hubName,
+        state: r.state || '',
+        city: r.city || '',
         zone: r.zone || '',
         gm: r.gm || '',
         rm: r.rm || '',
@@ -855,8 +907,39 @@ function processDataSet(payload) {
   return { rows: processedRows, pickedMap };
 }
 
+function buildCapacityMap(payload) {
+  CAPACITY_MAP = {};
+  const capData = (payload && payload.hub_capacity) ? payload.hub_capacity : [];
+  capData.forEach(row => {
+    const hubNorm = String(row.hub || '').trim().toLowerCase();
+    const date = normalizeDateStr(row.date);
+    if (!hubNorm || !date) return;
+    if (!CAPACITY_MAP[hubNorm]) CAPACITY_MAP[hubNorm] = {};
+    // If multiple entries per hub+date, take the one with higher capacity (or accumulate)
+    if (!CAPACITY_MAP[hubNorm][date]) {
+      CAPACITY_MAP[hubNorm][date] = { capacity: 0, consumption: 0 };
+    }
+    CAPACITY_MAP[hubNorm][date].capacity += Number(row.capacity) || 0;
+    CAPACITY_MAP[hubNorm][date].consumption += Number(row.consumption) || 0;
+  });
+}
+
+function getCapacityDates() {
+  // Returns sorted dates from capacity data; last 2 are "today" and "tomorrow"
+  const allDates = new Set();
+  Object.values(CAPACITY_MAP).forEach(dateMap => Object.keys(dateMap).forEach(d => allDates.add(d)));
+  return [...allDates].sort((a, b) => dv(a) - dv(b));
+}
+
+function isCapacityConsumed(hubNorm, date) {
+  const entry = CAPACITY_MAP[hubNorm] && CAPACITY_MAP[hubNorm][date];
+  if (!entry || entry.capacity <= 0) return false;
+  return entry.consumption >= entry.capacity;
+}
+
 function init(payload, cpdPayload){
   HUB_MAP = {};
+  buildCapacityMap(payload);
 
   const mainData = processDataSet(payload);
   RAW = mainData.rows;
@@ -900,6 +983,10 @@ function buildFilters(){
   const allMeta = Object.values(HUB_MAP);
   const uniq = k => [...new Set(allMeta.map(m => m[k]).filter(Boolean))].sort();
 
+  const states = uniq('state');
+  const cities = uniq('city');
+  buildMultiList('state', states);
+  buildMultiList('city', cities);
   pop('f-zone',uniq('zone'));
   pop('f-gm',uniq('gm'));
   pop('f-rm',uniq('rm'));
@@ -1165,6 +1252,138 @@ function activeDates(){
 //   return selectedDates;
 // }
 
+// ─────────────────────────────────────────────
+// MULTI-SELECT DROPDOWNS (State / City)
+// ─────────────────────────────────────────────
+// State machine per key:
+//   mode = 'all'  → all values pass (empty selection = all)
+//   mode = 'some' → only values in selected set pass
+//   mode = 'none' → nothing passes
+const multiState = {
+  state: { mode: 'all', selected: new Set() },
+  city:  { mode: 'all', selected: new Set() }
+};
+
+function getSelectedVals(key) {
+  const ms = multiState[key];
+  if (ms.mode === 'all')  return [];           // [] means "no filter"
+  if (ms.mode === 'none') return ['__none__']; // sentinel → nothing matches
+  return [...ms.selected];
+}
+
+function buildMultiList(key, values) {
+  const listEl = document.getElementById(key + '-list');
+  listEl.innerHTML = '';
+  values.forEach(v => {
+    const item = document.createElement('label');
+    item.className = 'date-item';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = v;
+    chk.checked = isChecked(key, v);
+    chk.onchange = () => {
+      const ms = multiState[key];
+      // If currently "all", expanding to explicit (uncheck one item)
+      if (ms.mode === 'all') {
+        ms.selected = new Set(values);
+        ms.mode = 'some';
+      }
+      // If currently "none", start fresh with just this item
+      if (ms.mode === 'none') {
+        ms.selected = new Set();
+        ms.mode = 'some';
+      }
+      // Toggle
+      if (chk.checked) ms.selected.add(v);
+      else ms.selected.delete(v);
+
+      // Collapse: if all selected → mode=all; if none → mode=none
+      if (ms.selected.size === values.length) { ms.mode = 'all'; ms.selected = new Set(); }
+      else if (ms.selected.size === 0)         { ms.mode = 'none'; }
+
+      refreshMultiUI(key, values);
+      if (key === 'state') cascadeCityFilter();
+      applyFilters();
+    };
+    item.appendChild(chk);
+    item.appendChild(document.createTextNode(v));
+    listEl.appendChild(item);
+  });
+  refreshMultiUI(key, values);
+}
+
+function isChecked(key, v) {
+  const ms = multiState[key];
+  if (ms.mode === 'all')  return true;
+  if (ms.mode === 'none') return false;
+  return ms.selected.has(v);
+}
+
+function refreshMultiUI(key, values) {
+  document.querySelectorAll('#' + key + '-list input[type="checkbox"]')
+    .forEach(chk => { chk.checked = isChecked(key, chk.value); });
+  updateMultiLabel(key, values);
+}
+
+function updateMultiLabel(key, values) {
+  const ms = multiState[key];
+  const lbl = document.getElementById(key + '-btn-label');
+  const noun = key === 'state' ? 'State' : 'City';
+  if (ms.mode === 'none') lbl.textContent = 'None selected';
+  else if (ms.mode === 'all') lbl.textContent = 'All ' + noun + 's';
+  else if (ms.selected.size === 1) lbl.textContent = [...ms.selected][0];
+  else lbl.textContent = ms.selected.size + ' ' + noun + 's';
+}
+
+function selectAllMulti(key) {
+  multiState[key].mode = 'all';
+  multiState[key].selected = new Set();
+  const values = [...document.querySelectorAll('#' + key + '-list input')].map(i => i.value);
+  refreshMultiUI(key, values);
+  if (key === 'state') cascadeCityFilter();
+  applyFilters();
+}
+
+function clearAllMulti(key) {
+  multiState[key].mode = 'none';
+  multiState[key].selected = new Set();
+  const values = [...document.querySelectorAll('#' + key + '-list input')].map(i => i.value);
+  refreshMultiUI(key, values);
+  applyFilters();
+}
+
+function toggleMultiDD(e, ddId) {
+  e.stopPropagation();
+  ['state-dd','city-dd'].forEach(id => {
+    if (id !== ddId) document.getElementById(id).classList.remove('open');
+  });
+  document.getElementById(ddId).classList.toggle('open');
+}
+
+document.addEventListener('click', e => {
+  ['state-fg','city-fg'].forEach(fgId => {
+    const fg = document.getElementById(fgId);
+    if (fg && !fg.contains(e.target)) {
+      const dd = fg.querySelector('.date-dropdown');
+      if (dd) dd.classList.remove('open');
+    }
+  });
+});
+
+function cascadeCityFilter() {
+  const selStates = getSelectedVals('state');
+  const allMeta = Object.values(HUB_MAP);
+  const cities = [...new Set(
+    allMeta
+      .filter(m => !selStates.length || (selStates[0] !== '__none__' && selStates.includes(m.state)))
+      .map(m => m.city).filter(Boolean)
+  )].sort();
+  multiState.city = { mode: 'all', selected: new Set() };
+  buildMultiList('city', cities);
+}
+
+function onStateChange() { cascadeCityFilter(); applyFilters(); }
+
 function pop(id,vals){
   const el = document.getElementById(id);
   el.innerHTML = '<option value="">All</option>';
@@ -1179,12 +1398,21 @@ function pop(id,vals){
 function resetFilters(){
   ['f-zone','f-gm','f-rm','f-am','f-ph'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-type').value = 'all';
+  multiState.state = { mode: 'all', selected: new Set() };
+  multiState.city  = { mode: 'all', selected: new Set() };
+  const allMeta = Object.values(HUB_MAP);
+  buildMultiList('state', [...new Set(allMeta.map(m=>m.state).filter(Boolean))].sort());
+  buildMultiList('city',  [...new Set(allMeta.map(m=>m.city).filter(Boolean))].sort());
   selectedDates = new Set();
   buildDateList();
   applyFilters();
 }
 
 function filterDataset(sourceArray) {
+  const states = getSelectedVals('state');
+  const cities = getSelectedVals('city');
+  const stateNone = states[0] === '__none__';
+  const cityNone  = cities[0] === '__none__';
   const zone = fv('f-zone');
   const gm = fv('f-gm');
   const rm = fv('f-rm');
@@ -1195,6 +1423,8 @@ function filterDataset(sourceArray) {
 
   return sourceArray.filter(r =>
     ad.has(normalizeDateStr(r.date)) &&
+    (!stateNone && (!states.length || states.includes(r.state))) &&
+    (!cityNone  && (!cities.length || cities.includes(r.city))) &&
     (!zone || r.zone === zone) &&
     (!gm || r.gm === gm) &&
     (!rm || r.rm === rm) &&
@@ -1239,6 +1469,10 @@ function computeHubPickups(datesSet, targetMap = PICKED_MAP) {
   const hubTotals = {};
   let overallTotal = 0;
 
+  const fStates = getSelectedVals('state');
+  const fCities = getSelectedVals('city');
+  const stateNone = fStates[0] === '__none__';
+  const cityNone  = fCities[0] === '__none__';
   const fZone = fv('f-zone');
   const fGm = fv('f-gm');
   const fRm = fv('f-rm');
@@ -1251,12 +1485,16 @@ function computeHubPickups(datesSet, targetMap = PICKED_MAP) {
     if (!datesSet.has(dateStr)) return;
 
     const meta = HUB_MAP[hubNorm] || {};
-    
+
+    if (stateNone) return;
+    if (cityNone)  return;
+    if (fStates.length && !fStates.includes(meta.state)) return;
+    if (fCities.length && !fCities.includes(meta.city))  return;
     if (fZone && meta.zone !== fZone) return;
     if (fGm && meta.gm !== fGm) return;
     if (fRm && meta.rm !== fRm) return;
     if (fAm && meta.am !== fAm) return;
-    if (fPh && meta.ph !== fPh) return; 
+    if (fPh && meta.ph !== fPh) return;
 
     const val = targetMap[key];
     hubDateMap[key] = val;
@@ -1282,29 +1520,8 @@ function renderKPIs(){
     return isAvg ? (sum / periodDays) : sum;
   };
 
-  // const { overallTotal } = computeHubPickups(ds, PICKED_MAP);
-  // const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
-
- // Deduplicate: take promise count once per date (ignore duplicate hubs)
-function computeFinalPicked(ds, isAvg, periodDays) {
-  // Take the first row (any hub, since values are identical)
-  const firstRow = ds[0];
-
-  // Collect all date keys (skip Hub column)
-  const dateKeys = Object.keys(firstRow).filter(k => k !== 'Hub');
-
-  // Sum the promise counts for those dates
-  const promiseCount = dateKeys.reduce((sum, k) => sum + firstRow[k], 0);
-
-  // Return finalPicked directly
-  return isAvg ? (promiseCount / periodDays) : promiseCount;
-}
-
-// ✅ Usage
-const finalPicked = computeFinalPicked(ds, isAvg, periodDays);
-console.log("Final Picked:", finalPicked);
-
-
+  const { overallTotal } = computeHubPickups(ds, PICKED_MAP);
+  const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
   const modeLabel = isAvg ? 'Avg Daily ' : '';
@@ -1314,31 +1531,49 @@ console.log("Final Picked:", finalPicked);
     : N(val);
 
   const totalBreaches = cnt([BA, BE, BR], false) + cnt([BD], true);
+  const totalDenom = finalPicked + totalBreaches;
+  const overallPct = totalDenom > 0 ? ((totalBreaches / totalDenom) * 100).toFixed(2) + '%' : '0.00%';
+
+  const kpiPct = (numerator) => {
+    const denom = finalPicked + (isAvg ? (totalBreaches) : totalBreaches);
+    // per-bucket %: numerator / (picked + all breaches)
+    const d2 = (isAvg ? finalPicked : finalPicked) + totalBreaches;
+    if (!d2) return '0.00%';
+    return ((numerator / d2) * 100).toFixed(2) + '%';
+  };
+
+  const cntBA = cnt([BA]), cntBE = cnt([BE]), cntBR = cnt([BR]), cntBD = cnt([BD], true);
 
   document.getElementById('kpi-bar').innerHTML =
-    '<div class="kpi k0">' +
+
+  '<div class="kpi k5">' +
+        '<div class="k-lbl">' + modeLabel + 'DRR</div>' +
+        '<div class="k-val">' + fmt(finalPicked) + '</div>' +
+      '</div>' +
+   '<div class="kpi k0">' +
       '<div class="k-lbl">' + modeLabel + 'Total Breaches (' + periodLabel + ')</div>' +
       '<div class="k-val">' + fmt(totalBreaches) + '</div>' +
-    '</div>' +
-    '<div class="kpi k5">' +
-      '<div class="k-lbl">' + modeLabel + 'Pan India Promise</div>' +
-      '<div class="k-val">' + fmt(finalPicked) + '</div>' +
+      '<div style="font-size:12px;color:var(--navy);margin-top:2px">' + overallPct + ' of DRR+Breaches</div>' +
     '</div>' +
     '<div class="kpi k1">' +
       '<div class="k-lbl">' + modeLabel + 'Attempt Breach</div>' +
-      '<div class="k-val">' + fmt(cnt([BA])) + '</div>' +
+      '<div class="k-val">' + fmt(cntBA) + '</div>' +
+      '<div style="font-size:12px;color:var(--navy);margin-top:2px">' + kpiPct(cntBA) + '</div>' +
     '</div>' +
     '<div class="kpi k2">' +
       '<div class="k-lbl">' + modeLabel + 'EKL Issue</div>' +
-      '<div class="k-val">' + fmt(cnt([BE])) + '</div>' +
+      '<div class="k-val">' + fmt(cntBE) + '</div>' +
+      '<div style="font-size:12px;color:var(--navy);margin-top:2px">' + kpiPct(cntBE) + '</div>' +
     '</div>' +
     '<div class="kpi k3">' +
       '<div class="k-lbl">' + modeLabel + 'Auto Reset</div>' +
-      '<div class="k-val">' + fmt(cnt([BR])) + '</div>' +
+      '<div class="k-val">' + fmt(cntBR) + '</div>' +
+      '<div style="font-size:12px;color:var(--navy);margin-top:2px">' + kpiPct(cntBR) + '</div>' +
     '</div>' +
     '<div class="kpi k4">' +
       '<div class="k-lbl">' + modeLabel + 'Dispatch Breach (CPD)</div>' +
-      '<div class="k-val">' + fmt(cnt([BD], true)) + '</div>' +
+      '<div class="k-val">' + fmt(cntBD) + '</div>' +
+      '<div style="font-size:12px;color:var(--navy);margin-top:2px">' + kpiPct(cntBD) + '</div>' +
     '</div>';
 }
 
@@ -1387,7 +1622,43 @@ function renderCharts(){
       labels:['Attempt', 'EKL Issue', 'Auto Reset', 'Dispatch'],
       datasets:[{ data:mix, backgroundColor: ['#FF6B6B', '#FCD34D', '#FFB6C1', '#C4A484'] }]
     },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom' },
+        tooltip:{
+          callbacks:{
+            label: ctx => {
+              const total = ctx.dataset.data.reduce((a,b) => a+b, 0);
+              const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+              return ctx.label + ': ' + pct + '%';
+            }
+          }
+        },
+        datalabels: false
+      }
+    },
+    plugins:[{
+      id: 'pctLabels',
+      afterDatasetDraw(chart) {
+        const { ctx, data } = chart;
+        const total = data.datasets[0].data.reduce((a,b) => a+b, 0);
+        if (!total) return;
+        chart.getDatasetMeta(0).data.forEach((arc, i) => {
+          const val = data.datasets[0].data[i];
+          const pct = ((val / total) * 100).toFixed(1) + '%';
+          const { x, y } = arc.tooltipPosition();
+          ctx.save();
+          ctx.font = 'bold 11px Segoe UI, Arial, sans-serif';
+          ctx.fillStyle = '#333';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          if (val / total > 0.04) ctx.fillText(pct, x, y);
+          ctx.restore();
+        });
+      }
+    }]
   });
 }
 
@@ -1398,8 +1669,119 @@ function setP(sec,days,el){
   renderSec(sec);
 }
 
+let gmPeriod = 1;
+const gmSort = { col: 6, asc: false }; // default: Grand Total desc
+
+function setGmP(n, el) {
+  gmPeriod = n;
+  document.querySelectorAll('#tp-gm .pt').forEach(e => e.classList.remove('on'));
+  el.classList.add('on');
+  renderGmView();
+}
+
+function doGmSort(ci) {
+  if (gmSort.col === ci) gmSort.asc = !gmSort.asc;
+  else { gmSort.col = ci; gmSort.asc = ci === 0; } // text cols default asc, numeric desc
+  renderGmView();
+}
+
+function renderGmView() {
+  const ds = datesForN(gmPeriod);
+  const rows = filtered.filter(r => ds.has(normalizeDateStr(r.date)));
+  const { hubTotals } = computeHubPickups(ds, PICKED_MAP);
+
+  const gmAgg = {};
+
+  Object.keys(hubTotals).forEach(hubNorm => {
+    const meta = HUB_MAP[hubNorm] || {};
+    const gm = meta.gm || '(Unknown)';
+    if (!gmAgg[gm]) gmAgg[gm] = { gm, p: 0, a: 0, e: 0, ar: 0, d: 0, t: 0 };
+    gmAgg[gm].p += hubTotals[hubNorm] || 0;
+  });
+
+  rows.forEach(r => {
+    const gm = r.gm || '(Unknown)';
+    if (!gmAgg[gm]) gmAgg[gm] = { gm, p: 0, a: 0, e: 0, ar: 0, d: 0, t: 0 };
+    const cnt = r.cnt || 1;
+    if (r.bucket === BA)  gmAgg[gm].a  += cnt;
+    if (r.bucket === BE)  gmAgg[gm].e  += cnt;
+    if (r.bucket === BR)  gmAgg[gm].ar += cnt;
+    if (r.bucket === BD)  gmAgg[gm].d  += cnt;
+    gmAgg[gm].t += cnt;
+  });
+
+  // Sort
+  const colKeys = ['gm', 'p', 'a', 'e', 'ar', 'd', 't', 'bp'];
+  const gmRows = Object.values(gmAgg).sort((a, b) => {
+    const key = colKeys[gmSort.col];
+    const av = key === 'bp' ? (a.p + a.t > 0 ? a.t / (a.p + a.t) : 0) : a[key];
+    const bv = key === 'bp' ? (b.p + b.t > 0 ? b.t / (b.p + b.t) : 0) : b[key];
+    if (typeof av === 'string') return gmSort.asc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return gmSort.asc ? av - bv : bv - av;
+  });
+
+  const tbl = document.getElementById('t-gm');
+  if (!gmRows.length) {
+    tbl.innerHTML = '<tbody><tr><td class="no-data">No data for this selection.</td></tr></tbody>';
+    return;
+  }
+
+  const gt = { p: 0, a: 0, e: 0, ar: 0, d: 0, t: 0 };
+  gmRows.forEach(r => { gt.p += r.p; gt.a += r.a; gt.e += r.e; gt.ar += r.ar; gt.d += r.d; gt.t += r.t; });
+
+  const bpFmt = r => {
+    const denom = (r.p || 0) + (r.t || 0);
+    return denom > 0 ? ((r.t / denom) * 100).toFixed(2) + '%' : '—';
+  };
+
+  const thG = (label, ci, cls = '') => {
+    const sc = gmSort.col === ci ? (gmSort.asc ? ' sorted-asc' : ' sorted-desc') : '';
+    return '<th class="' + cls + sc + '" onclick="doGmSort(' + ci + ')">' + label + ' <span class="si"></span></th>';
+  };
+
+  let html = '<thead><tr>'
+    + thG('GM', 0)
+    + thG('DRR', 1, 'r')
+    + thG('Attempt Breach', 2, 'r')
+    + thG('EKL Issue', 3, 'r')
+    + thG('Auto Reset', 4, 'r')
+    + thG('Dispatch Breach', 5, 'r')
+    + thG('Grand Total', 6, 'r')
+    + thG('Breach %', 7, 'r')
+    + '</tr></thead>';
+
+  html += '<tbody>';
+  gmRows.forEach(r => {
+    html += '<tr>'
+      + '<td>' + (r.gm || '—') + '</td>'
+      + '<td class="r">' + N(r.p) + '</td>'
+      + '<td class="r">' + N(r.a) + '</td>'
+      + '<td class="r">' + N(r.e) + '</td>'
+      + '<td class="r">' + N(r.ar) + '</td>'
+      + '<td class="r">' + N(r.d) + '</td>'
+      + '<td class="r">' + N(r.t) + '</td>'
+      + '<td class="r">' + bpFmt(r) + '</td>'
+      + '</tr>';
+  });
+
+  html += '<tr style="font-weight:700;border-top:2px solid var(--border)">'
+    + '<td>Grand Total</td>'
+    + '<td class="r">' + N(gt.p) + '</td>'
+    + '<td class="r">' + N(gt.a) + '</td>'
+    + '<td class="r">' + N(gt.e) + '</td>'
+    + '<td class="r">' + N(gt.ar) + '</td>'
+    + '<td class="r">' + N(gt.d) + '</td>'
+    + '<td class="r">' + N(gt.t) + '</td>'
+    + '<td class="r">' + bpFmt(gt) + '</td>'
+    + '</tr>';
+
+  html += '</tbody>';
+  tbl.innerHTML = html;
+}
+
 function renderAll(){
   [0,1,2].forEach(i => renderSec(i));
+  renderGmView();
 }
 
 function sortRows(rows,col,asc,buckets,periodDays){
@@ -1425,10 +1807,17 @@ function sortRows(rows,col,asc,buckets,periodDays){
   }
 
   const getSuggVal = r => {
-    if (!r.t || r.t === 0) return 'No buffer required';
-    const avgPickup = ((r.a || 0) + (r.e || 0) + (r.ar || 0)) / (periodDays || 1);
-    const avgDispatch = (r.d || 0) / (periodDays || 1);
-    return avgPickup >= avgDispatch ? 'Take 24 hrs buffer' : 'Take 4 hrs buffer';
+    const totalBreaches = (r.a || 0) + (r.e || 0) + (r.ar || 0) + (r.d || 0);
+    const denom = (r.p || 0) + totalBreaches;
+    const bp = denom > 0 ? (totalBreaches / denom) * 100 : 0;
+    if (bp <= 2 || (r.t || 0) <= 400) return 'No buffer required';
+    const capDates = getCapacityDates();
+    const todayDate = capDates.length >= 2 ? capDates[capDates.length - 2] : null;
+    const tomorrowDate = capDates.length >= 1 ? capDates[capDates.length - 1] : null;
+    const hn = String(r.ph || '').trim().toLowerCase();
+    if (todayDate && tomorrowDate && isCapacityConsumed(hn, todayDate) && isCapacityConsumed(hn, tomorrowDate)) return 'Take Capacity Action';
+    const ratio = (r.d || 0) / (r.t || 1);
+    return ratio > 0.75 ? 'Take 4 hrs buffer' : 'Take 24 hrs buffer';
   };
 
   return [...rows].sort((a,b) => {
@@ -1533,12 +1922,12 @@ const hubRows = filterByDrr(
   const prefix = showAverage ? 'Avg ' : '';
   let numCI = 5;
 
-  let header = '<thead><tr>' + thC('Hub',0) + thC('Zone',1) + thC('GM',2) + thC('RM',3) + thC('AM',4) + thC(prefix + 'Pan India Promise', numCI++, 'r');
+  let header = '<thead><tr>' + thC('Hub',0) + thC('Zone',1) + thC('GM',2) + thC('RM',3) + thC('AM',4) + thC(prefix + 'DRR', numCI++, 'r');
   if(sA) header += thC(prefix + 'Attempt Breach', numCI++, 'r');
   if(sE) header += thC(prefix + 'EKL Issue', numCI++, 'r');
   if(sR) header += thC(prefix + 'Auto Reset', numCI++, 'r');
   if(sD) header += thC(prefix + 'Dispatch Breach', numCI++, 'r');
-  header += thC(showAverage ? 'Avg Daily Total' : 'Grand Total', numCI++, 'r') + thC(prefix + 'Breach %', numCI++, 'r') + thC('Suggestion', numCI++) + '</tr></thead>';
+  header += thC(showAverage ? 'Avg Daily Total' : 'Grand Total', numCI++, 'r') + thC(prefix + 'Breach %', numCI++, 'r') + thC('Cap Today', numCI++, 'r') + thC('Cap Tomorrow', numCI++, 'r') + thC('Suggestion', numCI++) + '</tr></thead>';
 
   const zbadge = z => '<span class="zbadge z-' + (z || 'Unknown') + '">' + (z || '?') + '</span>';
 
@@ -1581,41 +1970,74 @@ const hubRows = filterByDrr(
   // return 'Take 24 hrs buffer';
   // };
 
-  const getSuggText = d => {
-  // Condition 1: total breaches missing or ≤ 400
-  // Condition 2: breach % ≤ 2%
-  const breachPct = ((d.a || 0) + (d.e || 0) + (d.ar || 0) + (d.d || 0)) / ((d.p || 0) + (d.a || 0) + (d.e || 0) + (d.ar || 0) + (d.d || 0)) * 100;
 
-  if (!d.t || d.t <= 400 || breachPct <= 2) {
-    return 'No buffer required';
-  }
+      const getSuggText = d => {
+    // Step 1: Grand Total <= 400 OR Breach % <= 2% → No buffer required
+    const totalBreaches = (d.a || 0) + (d.e || 0) + (d.ar || 0) + (d.d || 0);
+    const denominator = (d.p || 0) + totalBreaches;
+    const breachPct = denominator > 0 ? (totalBreaches / denominator) * 100 : 0;
 
-  // Calculate ratio of Dispatch Breach to Daily Total
-  const ratio = (d.d || 0) / (d.t || 1);
+    if ((d.t || 0) <= 400 || breachPct <= 2) {
+      return 'No buffer required';
+    }
 
-  // If Dispatch Breach / Daily Total > 75% → 4 hrs buffer
-  if (ratio > 0.75) {
-    return 'Take 4 hrs buffer';
-  }
+    // Step 2: Cap today >= 100% AND cap tomorrow >= 70% → Take Capacity Action
+    const capDates = getCapacityDates();
+    const todayDate = capDates.length >= 2 ? capDates[capDates.length - 2] : null;
+    const tomorrowDate = capDates.length >= 1 ? capDates[capDates.length - 1] : null;
+    const hubNorm = String(d.ph || '').trim().toLowerCase();
 
-  // Otherwise → 24 hrs buffer
-  return 'Take 24 hrs buffer';
-};
+    const getCapPct = (hNorm, date) => {
+      if (!date) return 0;
+      const entry = CAPACITY_MAP[hNorm] && CAPACITY_MAP[hNorm][date];
+      if (!entry || entry.capacity <= 0) return 0;
+      return (entry.consumption / entry.capacity) * 100;
+    };
 
+    const todayPct = getCapPct(hubNorm, todayDate);
+    const tomorrowPct = getCapPct(hubNorm, tomorrowDate);
 
-  
+    if (todayPct >= 99.9 && tomorrowPct >= 70) {
+      return 'Take Capacity Action';
+    }
+
+    // Step 3: Dispatch breach > 75% of grand total → Take 4 hrs buffer
+    const ratio = (d.d || 0) / (d.t || 1);
+    if (ratio > 0.75) {
+      return 'Take 4 hrs buffer';
+    }
+    return 'Take 24 hrs buffer';
+  };
+
 
   const getSuggStyle = sugg => {
     if (sugg === 'No buffer required') return 'color:var(--green)';
+    if (sugg === 'Take Capacity Action') return 'color:var(--red);font-weight:700';
     if (sugg.includes('24')) return 'color:var(--amber)';
     return 'color:var(--blue)';
   };
 
   let body = '<tbody>';
 
+  const capDates = getCapacityDates();
+  const todayDate = capDates.length >= 2 ? capDates[capDates.length - 2] : null;
+  const tomorrowDate = capDates.length >= 1 ? capDates[capDates.length - 1] : null;
+
+  const capCell = (hubNorm, date) => {
+    if (!date) return '<td class="r" style="color:var(--muted)">—</td>';
+    const entry = CAPACITY_MAP[hubNorm] && CAPACITY_MAP[hubNorm][date];
+    if (!entry || entry.capacity <= 0) return '<td class="r" style="color:var(--muted)">N/A</td>';
+    const capPct = (entry.consumption / entry.capacity) * 100;
+    const consumed = capPct >= 99.9;
+    const pctVal = ((entry.consumption / entry.capacity) * 100).toFixed(1) + '%';
+    const style = consumed ? 'color:var(--red);font-weight:700' : 'color:var(--green);font-weight:600';
+    return '<td class="r" style="' + style + '" title="' + N(Math.round(entry.consumption)) + ' / ' + N(entry.capacity) + '">' + pctVal  + '</td>';
+  };
+
   hubRows.forEach((r, idx) => {
     const rowId = 'sub-' + sec + '-' + idx;
     const sugg = getSuggText(r);
+    const hubNorm = String(r.ph || '').trim().toLowerCase();
 
     body += '<tr>' +
       '<td><span class="expand-btn" onclick="toggleRow(\'' + rowId + '\', this)">+</span> ' + r.ph + '</td>' +
@@ -1624,6 +2046,8 @@ const hubRows = filterByDrr(
       '<td>' + (r.rm || '-') + '</td>' +
       '<td>' + (r.am || '-') + '</td>' +
       cells(r) +
+      capCell(hubNorm, todayDate) +
+      capCell(hubNorm, tomorrowDate) +
       '<td style="font-weight:600;' + getSuggStyle(sugg) + '">' + sugg + '</td>' +
       '</tr>';
 
@@ -1631,7 +2055,7 @@ const hubRows = filterByDrr(
       .filter(dk => (r.byDate[dk].t || 0) > 0)
       .sort((a,b) => dv(b) - dv(a));
 
-    let subHtml = '<tr id="' + rowId + '" style="display:none;"><td colspan="13">' +
+    let subHtml = '<tr id="' + rowId + '" style="display:none;"><td colspan="15">' +
       '<div class="sub-table-container"><strong>Breach Days Breakdown for ' + r.ph + '</strong>';
 
     if (breachOnlyDates.length === 0) {
@@ -1670,6 +2094,7 @@ const hubRows = filterByDrr(
   body += '<tr class="rt">' +
     '<td colspan="5">GRAND TOTAL</td>' +
     cells(gt) +
+    '<td class="r">—</td><td class="r">—</td>' +
     '<td style="font-weight:700;' + getSuggStyle(gtSugg) + '">' + gtSugg + '</td>' +
     '</tr></tbody>';
 
