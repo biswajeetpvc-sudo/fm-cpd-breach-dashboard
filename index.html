@@ -819,18 +819,7 @@ async function loadData(){
     const response = await fetch('cpd_data.json?v=' + Date.now(), { cache: "no-store" });
     if(!response.ok) throw new Error('HTTP ' + response.status);
     const payload = await response.json();
-
-    let cpdPayload = null;
-    try {
-      const cpdResponse = await fetch('cpd_data.json?v=' + Date.now(), { cache: "no-store" });
-      if (cpdResponse.ok) {
-        cpdPayload = await cpdResponse.json();
-      }
-    } catch(err) {
-      console.warn("cpd_data.json not loaded, defaulting to main dataset:", err);
-    }
-
-    init(payload, cpdPayload);
+    init(payload, payload);
   }catch(e){
     setS('err', 'Failed to load dataset: ' + e.message);
   }
@@ -942,26 +931,21 @@ function isCapacityConsumed(hubNorm, date) {
 
 function init(payload, cpdPayload){
   HUB_MAP = {};
+  DAILY_PROMISE = {};
   buildCapacityMap(payload);
+
+  // Always load daily_promise from payload first
+  if (payload && payload.daily_promise && typeof payload.daily_promise === 'object') {
+    Object.entries(payload.daily_promise).forEach(([d, v]) => {
+      DAILY_PROMISE[normalizeDateStr(d)] = Number(v) || 0;
+    });
+  }
 
   const mainData = processDataSet(payload);
   RAW = mainData.rows;
   PICKED_MAP = mainData.pickedMap;
-
-  if (cpdPayload) {
-    const cpdData = processDataSet(cpdPayload);
-    CPD_RAW = cpdData.rows;
-    CPD_PICKED_MAP = cpdData.pickedMap;
-    // daily_promise: { "DD-MM-YYYY": totalCount } — one value per date
-    if (cpdPayload.daily_promise && typeof cpdPayload.daily_promise === 'object') {
-      Object.entries(cpdPayload.daily_promise).forEach(([d, v]) => {
-        DAILY_PROMISE[normalizeDateStr(d)] = Number(v) || 0;
-      });
-    }
-  } else {
-    CPD_RAW = RAW;
-    CPD_PICKED_MAP = PICKED_MAP;
-  }
+  CPD_RAW = RAW;
+  CPD_PICKED_MAP = PICKED_MAP;
 
   const rawDates = RAW.map(r => r.date);
   const pickedDates = Object.keys(PICKED_MAP).map(k => k.split('||')[1]);
@@ -1572,13 +1556,13 @@ function renderKPIs(){
   document.getElementById('kpi-bar').innerHTML =
 
   '<div class="kpi k5">' +
-        '<div class="k-lbl">' + modeLabel + 'DRR</div>' +
+        '<div class="k-lbl">' + modeLabel + 'CPD Promise</div>' +
         '<div class="k-val">' + fmtDRR(finalPicked) + '</div>' +
       '</div>' +
    '<div class="kpi k0">' +
       '<div class="k-lbl">' + modeLabel + 'Total Breaches (' + periodLabel + ')</div>' +
       '<div class="k-val">' + fmt(totalBreaches) + '</div>' +
-      '<div style="font-size:12px;color:var(--navy);margin-top:2px">' + overallPct + ' of DRR+Breaches</div>' +
+      '<div style="font-size:12px;color:var(--navy);margin-top:2px">' + overallPct + ' of CPD+Breaches</div>' +
     '</div>' +
     '<div class="kpi k1">' +
       '<div class="k-lbl">' + modeLabel + 'Attempt Breach</div>' +
@@ -1766,7 +1750,7 @@ function renderGmView() {
 
   let html = '<thead><tr>'
     + thG('GM', 0)
-    + thG('DRR', 1, 'r')
+    + thG('CPD Promise', 1, 'r')
     + thG('Attempt Breach', 2, 'r')
     + thG('EKL Issue', 3, 'r')
     + thG('Auto Reset', 4, 'r')
@@ -1952,7 +1936,7 @@ const hubRows = filterByDrr(
   const prefix = showAverage ? 'Avg ' : '';
   let numCI = 5;
 
-  let header = '<thead><tr>' + thC('Hub',0) + thC('Zone',1) + thC('GM',2) + thC('RM',3) + thC('AM',4) + thC(prefix + 'DRR', numCI++, 'r');
+  let header = '<thead><tr>' + thC('Hub',0) + thC('Zone',1) + thC('GM',2) + thC('RM',3) + thC('AM',4) + thC(prefix + 'CPD Promise', numCI++, 'r');
   if(sA) header += thC(prefix + 'Attempt Breach', numCI++, 'r');
   if(sE) header += thC(prefix + 'EKL Issue', numCI++, 'r');
   if(sR) header += thC(prefix + 'Auto Reset', numCI++, 'r');
