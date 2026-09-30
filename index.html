@@ -724,6 +724,7 @@ let PICKED_MAP = {};
 let CPD_PICKED_MAP = {}; 
 let HUB_MAP = {}; 
 let CAPACITY_MAP = {}; // hubNorm -> { date -> { capacity, consumption } }
+let DAILY_PROMISE = {}; // { "DD-MM-YYYY": totalCount } — one value per date
 let DATES = [];
 let filtered = [];
 let cpdFiltered = [];
@@ -743,7 +744,8 @@ let sortState = [
 ];
 
 function N(num) {
-  return (num || 0).toLocaleString();
+  const n = Number(num);
+  return (isNaN(n) ? 0 : n).toLocaleString();
 }
 
 // function pct(t, p) {
@@ -782,9 +784,10 @@ function N(num) {
 
   
 
-  function pct(d) {
+  function pct(d, promiseOverride) {
   const numerator = (d.a || 0) + (d.e || 0) + (d.ar || 0) + (d.d || 0);
-  const denominator = (d.p || 0) + numerator;
+  const p = promiseOverride !== undefined ? promiseOverride : (d.p || 0);
+  const denominator = p + numerator;
   if (denominator === 0) return '0.00%';
   return ((numerator / denominator) * 100).toFixed(2) + '%';
 }
@@ -949,6 +952,12 @@ function init(payload, cpdPayload){
     const cpdData = processDataSet(cpdPayload);
     CPD_RAW = cpdData.rows;
     CPD_PICKED_MAP = cpdData.pickedMap;
+    // daily_promise: { "DD-MM-YYYY": totalCount } — one value per date
+    if (cpdPayload.daily_promise && typeof cpdPayload.daily_promise === 'object') {
+      Object.entries(cpdPayload.daily_promise).forEach(([d, v]) => {
+        DAILY_PROMISE[normalizeDateStr(d)] = Number(v) || 0;
+      });
+    }
   } else {
     CPD_RAW = RAW;
     CPD_PICKED_MAP = PICKED_MAP;
@@ -1524,37 +1533,27 @@ function renderKPIs(){
   // const finalPicked = isAvg ? (overallTotal / periodDays) : overallTotal;
 
 
-  // Deduplicate: take promise count once per date (ignore duplicate hubs)
-  function computeFinalPicked(ds, isAvg, periodDays) {
-  const byDate = {};
-
-  ds.forEach(r => {
-    Object.keys(r).forEach(k => {
-      if (k !== 'Hub') {
-        if (!byDate[k]) {
-          byDate[k] = r[k]; // take numeric promise value once
-        }
-      }
-    });
-  });
-
-  // Sum across unique dates
-  const promiseCount = Object.values(byDate).reduce((sum, v) => sum + v, 0);
-
-  // Return finalPicked directly
-  return isAvg ? (promiseCount / periodDays) : promiseCount;
-}
-
-// ✅ Usage
-const finalPicked = computeFinalPicked(ds, isAvg, periodDays);
-console.log("Final Picked:", finalPicked);
+  // Sum daily CPD promise totals for the active date set
+  // DAILY_PROMISE = { "DD-MM-YYYY": totalCount } — one value per date, not per hub
+  let promiseTotal = 0;
+  ds.forEach(d => { promiseTotal += DAILY_PROMISE[d] || 0; });
+  const finalPicked = isAvg ? (promiseTotal / periodDays) : promiseTotal;
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
   const modeLabel = isAvg ? 'Avg Daily ' : '';
 
-  const fmt = val => isAvg 
-    ? val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-    : N(val);
+  const fmt = val => {
+    const n = Number(val);
+    if (isNaN(n)) return '—';
+    return isAvg
+      ? n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : N(n);
+  };
+  // DRR card shows the raw promise count with no comma formatting
+  const fmtDRR = val => {
+    const n = Number(val);
+    return isNaN(n) ? '—' : String(Math.round(n));
+  };
 
   const totalBreaches = cnt([BA, BE, BR], false) + cnt([BD], true);
   const totalDenom = finalPicked + totalBreaches;
@@ -1574,7 +1573,7 @@ console.log("Final Picked:", finalPicked);
 
   '<div class="kpi k5">' +
         '<div class="k-lbl">' + modeLabel + 'DRR</div>' +
-        '<div class="k-val">' + fmt(finalPicked) + '</div>' +
+        '<div class="k-val">' + fmtDRR(finalPicked) + '</div>' +
       '</div>' +
    '<div class="kpi k0">' +
       '<div class="k-lbl">' + modeLabel + 'Total Breaches (' + periodLabel + ')</div>' +
@@ -1862,8 +1861,13 @@ function renderSec(sec){
   const periodDays = ds.size || 1;
   const showAverage = periodDays > 1;
 
-  const targetPickedMap = isDispatchSec ? CPD_PICKED_MAP : PICKED_MAP;
+  const targetPickedMap = PICKED_MAP;
   const targetFilteredRows = isDispatchSec ? cpdFiltered : filtered;
+
+  // Daily promise is a single total per date (not per hub).
+  // Sum it across the selected period to use as the shared DRR denominator.
+  let periodPromise = 0;
+  ds.forEach(d => { periodPromise += DAILY_PROMISE[d] || 0; });
 
   const { hubTotals, hubDateMap } = computeHubPickups(ds, targetPickedMap);
   const rows = targetFilteredRows.filter(r => ds.has(normalizeDateStr(r.date)) && buckets.includes(r.bucket));
@@ -1963,14 +1967,15 @@ const hubRows = filterByDrr(
   };
 
   const cells = d => {
-    let html = '<td class="r" style="color:var(--teal);font-weight:700">' + formatValue(d.p) + '</td>';
+    // DRR column: show the period's daily promise total (same for all hubs)
+    const drrDisplay = periodPromise > 0 ? formatValue(periodPromise) : '—';
+    let html = '<td class="r" style="color:var(--teal);font-weight:700">' + drrDisplay + '</td>';
     if(sA) html += '<td class="r">' + formatValue(d.a) + '</td>';
     if(sE) html += '<td class="r">' + formatValue(d.e) + '</td>';
     if(sR) html += '<td class="r">' + formatValue(d.ar) + '</td>';
     if(sD) html += '<td class="r">' + formatValue(d.d) + '</td>';
     html += '<td class="r" style="color:var(--blue);font-weight:700">' + formatValue(d.t) + '</td>';
-    // html += '<td class="r">' + pct(d.t, d.p) + '</td>';
-    html += '<td class="r">' + pct(d) + '</td>';
+    html += '<td class="r">' + pct(d, periodPromise) + '</td>';
     return html;
   };
 
@@ -2000,7 +2005,7 @@ const hubRows = filterByDrr(
       const getSuggText = d => {
     // Step 1: Grand Total <= 400 OR Breach % <= 2% → No buffer required
     const totalBreaches = (d.a || 0) + (d.e || 0) + (d.ar || 0) + (d.d || 0);
-    const denominator = (d.p || 0) + totalBreaches;
+    const denominator = periodPromise > 0 ? (periodPromise + totalBreaches) : ((d.p || 0) + totalBreaches);
     const breachPct = denominator > 0 ? (totalBreaches / denominator) * 100 : 0;
 
     if ((d.t || 0) <= 400 || breachPct <= 2) {
@@ -2097,15 +2102,16 @@ const hubRows = filterByDrr(
 
       breachOnlyDates.forEach(dk => {
         const dd = r.byDate[dk];
+        const dayPromise = DAILY_PROMISE[dk] || 0;
         subHtml += '<tr>' +
           '<td>' + dk + '</td>' +
-          '<td class="r">' + N(dd.p) + '</td>';
+          '<td class="r">' + (dayPromise > 0 ? N(dayPromise) : '—') + '</td>';
         if(sA) subHtml += '<td class="r">' + N(dd.a) + '</td>';
         if(sE) subHtml += '<td class="r">' + N(dd.e) + '</td>';
         if(sR) subHtml += '<td class="r">' + N(dd.ar) + '</td>';
         if(sD) subHtml += '<td class="r">' + N(dd.d) + '</td>';
         subHtml += '<td class="r" style="font-weight:700; color:var(--red);">' + N(dd.t) + '</td>' +
-          '<td class="r">' + pct(dd) + '</td>' +
+          '<td class="r">' + pct(dd, dayPromise) + '</td>' +
           '</tr>';
       });
 
