@@ -634,7 +634,7 @@ td.r{
     <div class="card-head">
       <div class="card-title">
         <span class="dot d0"></span>
-        Overall Breach — Attempt + EKL + Auto Reset + Dispatch
+        Overall Breach — Attempt + EKL + Dispatch
       </div>
       <div class="ptabs" id="tp0">
         <div class="pt on" onclick="setP(0,1,this)">D-1</div>
@@ -653,7 +653,7 @@ td.r{
     <div class="card-head">
       <div class="card-title">
         <span class="dot d1"></span>
-        Pickup Breach — Attempt + EKL + Auto Reset
+        Pickup Breach — Attempt + EKL
       </div>
       <div class="ptabs" id="tp1">
         <div class="pt on" onclick="setP(1,1,this)">D-1</div>
@@ -714,8 +714,8 @@ const BE = 'EKL Issue';
 const BR = 'Auto Reset';
 const BD = 'Dispatch breach';
 
-const ALL = [BA,BE,BR,BD];
-const PICKUP = [BA,BE,BR];
+const ALL = [BA,BE,BD];
+const PICKUP = [BA,BE];
 
 let drrMode = 'all';
 let RAW = [];
@@ -1621,7 +1621,7 @@ function renderCharts(){
       datasets:[
         { label:'Attempt', data:allDatesList.map(d => getCount(d,BA)), backgroundColor:'#FF6B6B', stack:'s' },
         { label:'EKL', data:allDatesList.map(d => getCount(d,BE)), backgroundColor:'#FCD34D', stack:'s' },
-        { label:'Auto Reset', data:allDatesList.map(d => getCount(d,BR)), backgroundColor:'#FFB6C1', stack:'s' },
+
         { label:'Dispatch', data:allDatesList.map(d => getCount(d,BD)), backgroundColor:'#C4A484', stack:'s' }
       ]
     },
@@ -1631,7 +1631,6 @@ function renderCharts(){
   const mix = [
     mainRows.filter(r => r.bucket === BA).reduce((sum,r) => sum + (r.cnt || 0), 0),
     mainRows.filter(r => r.bucket === BE).reduce((sum,r) => sum + (r.cnt || 0), 0),
-    mainRows.filter(r => r.bucket === BR).reduce((sum,r) => sum + (r.cnt || 0), 0),
     cpdRows.filter(r => r.bucket === BD).reduce((sum,r) => sum + (r.cnt || 0), 0)
   ];
 
@@ -1639,8 +1638,8 @@ function renderCharts(){
   chartMix = new Chart(document.getElementById('chart-mix').getContext('2d'), {
     type:'doughnut',
     data:{
-      labels:['Attempt', 'EKL Issue', 'Auto Reset', 'Dispatch'],
-      datasets:[{ data:mix, backgroundColor: ['#FF6B6B', '#FCD34D', '#FFB6C1', '#C4A484'] }]
+      labels:['Attempt', 'EKL Issue', 'Dispatch'],
+      datasets:[{ data:mix, backgroundColor: ['#FF6B6B', '#FCD34D', '#C4A484'] }]
     },
     options:{
       responsive:true,
@@ -1764,7 +1763,7 @@ function renderGmView() {
     + thG('CPD Promise', 1, 'r')
     + thG('Attempt Breach', 2, 'r')
     + thG('EKL Issue', 3, 'r')
-    + thG('Auto Reset', 4, 'r')
+
     + thG('Dispatch Breach', 5, 'r')
     + thG('Grand Total', 6, 'r')
     + thG('Breach %', 7, 'r')
@@ -1777,7 +1776,7 @@ function renderGmView() {
       + '<td class="r">' + N(r.p) + '</td>'
       + '<td class="r">' + N(r.a) + '</td>'
       + '<td class="r">' + N(r.e) + '</td>'
-      + '<td class="r">' + N(r.ar) + '</td>'
+
       + '<td class="r">' + N(r.d) + '</td>'
       + '<td class="r">' + N(r.t) + '</td>'
       + '<td class="r">' + bpFmt(r) + '</td>'
@@ -1789,7 +1788,7 @@ function renderGmView() {
     + '<td class="r">' + N(gt.p) + '</td>'
     + '<td class="r">' + N(gt.a) + '</td>'
     + '<td class="r">' + N(gt.e) + '</td>'
-    + '<td class="r">' + N(gt.ar) + '</td>'
+
     + '<td class="r">' + N(gt.d) + '</td>'
     + '<td class="r">' + N(gt.t) + '</td>'
     + '<td class="r">' + bpFmt(gt) + '</td>'
@@ -1962,7 +1961,7 @@ const hubRows = filterByDrr(
   let header = '<thead><tr>' + thC('Hub',0) + thC('Zone',1) + thC('GM',2) + thC('RM',3) + thC('AM',4) + thC(prefix + 'CPD Promise', numCI++, 'r');
   if(sA) header += thC(prefix + 'Attempt Breach', numCI++, 'r');
   if(sE) header += thC(prefix + 'EKL Issue', numCI++, 'r');
-  if(sR) header += thC(prefix + 'Auto Reset', numCI++, 'r');
+
   if(sD) header += thC(prefix + 'Dispatch Breach', numCI++, 'r');
   header += thC(showAverage ? 'Avg Daily Total' : 'Grand Total', numCI++, 'r') + thC(prefix + 'Breach %', numCI++, 'r') + thC('Cap Today', numCI++, 'r') + thC('Cap Tomorrow', numCI++, 'r') + thC('Suggestion', numCI++) + '</tr></thead>';
 
@@ -1979,7 +1978,7 @@ const hubRows = filterByDrr(
     let html = '<td class="r" style="color:var(--teal);font-weight:700">' + drrDisplay + '</td>';
     if(sA) html += '<td class="r">' + formatValue(d.a) + '</td>';
     if(sE) html += '<td class="r">' + formatValue(d.e) + '</td>';
-    if(sR) html += '<td class="r">' + formatValue(d.ar) + '</td>';
+
     if(sD) html += '<td class="r">' + formatValue(d.d) + '</td>';
     html += '<td class="r" style="color:var(--blue);font-weight:700">' + formatValue(d.t) + '</td>';
     html += '<td class="r">' + pct(d, periodPromise) + '</td>';
@@ -2103,7 +2102,7 @@ const hubRows = filterByDrr(
       
       if(sA) subHtml += '<th class="r">Attempt</th>';
       if(sE) subHtml += '<th class="r">EKL</th>';
-      if(sR) subHtml += '<th class="r">Auto Reset</th>';
+
       if(sD) subHtml += '<th class="r">Dispatch</th>';
       subHtml += '<th class="r">Total Breaches</th><th class="r">Breach %</th></tr></thead><tbody>';
 
@@ -2115,7 +2114,7 @@ const hubRows = filterByDrr(
           '<td class="r">' + (dayPromise > 0 ? N(dayPromise) : '—') + '</td>';
         if(sA) subHtml += '<td class="r">' + N(dd.a) + '</td>';
         if(sE) subHtml += '<td class="r">' + N(dd.e) + '</td>';
-        if(sR) subHtml += '<td class="r">' + N(dd.ar) + '</td>';
+
         if(sD) subHtml += '<td class="r">' + N(dd.d) + '</td>';
         subHtml += '<td class="r" style="font-weight:700; color:var(--red);">' + N(dd.t) + '</td>' +
           '<td class="r">' + pct(dd, dayPromise) + '</td>' +
