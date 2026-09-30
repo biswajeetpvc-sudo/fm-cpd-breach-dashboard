@@ -941,6 +941,7 @@ function init(payload, cpdPayload){
     });
   }
 
+
   const mainData = processDataSet(payload);
   RAW = mainData.rows;
   PICKED_MAP = mainData.pickedMap;
@@ -1521,6 +1522,20 @@ function renderKPIs(){
   // DAILY_PROMISE = { "DD-MM-YYYY": totalCount } — one value per date, not per hub
   let promiseTotal = 0;
   ds.forEach(d => { promiseTotal += DAILY_PROMISE[d] || 0; });
+
+  // Fallback: if DAILY_PROMISE not populated, read from breach rows total_picked
+  // (each row stores the day's total promise in total_picked)
+  if (promiseTotal === 0) {
+    const seen = new Set();
+    [...cpdFiltered, ...filtered].forEach(r => {
+      const d = normalizeDateStr(r.date);
+      if (ds.has(d) && !seen.has(d) && r.total_picked) {
+        promiseTotal += Number(r.total_picked) || 0;
+        seen.add(d);
+      }
+    });
+  }
+
   const finalPicked = isAvg ? (promiseTotal / periodDays) : promiseTotal;
 
   const periodLabel = kpiPeriod === 1 ? 'D-1' : kpiPeriod === 999 ? 'Overall' : 'Last ' + kpiPeriod + ' Days';
@@ -1852,6 +1867,18 @@ function renderSec(sec){
   // Sum it across the selected period to use as the shared DRR denominator.
   let periodPromise = 0;
   ds.forEach(d => { periodPromise += DAILY_PROMISE[d] || 0; });
+
+  // Fallback: read from breach rows total_picked if DAILY_PROMISE not loaded
+  if (periodPromise === 0) {
+    const seen = new Set();
+    targetFilteredRows.forEach(r => {
+      const d = normalizeDateStr(r.date);
+      if (ds.has(d) && !seen.has(d) && r.total_picked) {
+        periodPromise += Number(r.total_picked) || 0;
+        seen.add(d);
+      }
+    });
+  }
 
   const { hubTotals, hubDateMap } = computeHubPickups(ds, targetPickedMap);
   const rows = targetFilteredRows.filter(r => ds.has(normalizeDateStr(r.date)) && buckets.includes(r.bucket));
