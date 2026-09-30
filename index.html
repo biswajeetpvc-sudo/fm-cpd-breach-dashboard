@@ -1963,7 +1963,7 @@ const hubRows = filterByDrr(
   if(sE) header += thC(prefix + 'EKL Issue', numCI++, 'r');
 
   if(sD) header += thC(prefix + 'Dispatch Breach', numCI++, 'r');
-  header += thC(showAverage ? 'Avg Daily Total' : 'Grand Total', numCI++, 'r') + thC(prefix + 'Breach %', numCI++, 'r') + thC('Cap Today', numCI++, 'r') + thC('Cap Tomorrow', numCI++, 'r') + thC('Suggestion', numCI++) + '</tr></thead>';
+  header += thC(showAverage ? 'Avg Daily Total' : 'Grand Total', numCI++, 'r') + thC(prefix + 'Breach %', numCI++, 'r') + '</tr></thead>';
 
   const zbadge = z => '<span class="zbadge z-' + (z || 'Unknown') + '">' + (z || '?') + '</span>';
 
@@ -2073,8 +2073,6 @@ const hubRows = filterByDrr(
 
   hubRows.forEach((r, idx) => {
     const rowId = 'sub-' + sec + '-' + idx;
-    const sugg = getSuggText(r);
-    const hubNorm = String(r.ph || '').trim().toLowerCase();
 
     body += '<tr>' +
       '<td><span class="expand-btn" onclick="toggleRow(\'' + rowId + '\', this)">+</span> ' + r.ph + '</td>' +
@@ -2083,9 +2081,6 @@ const hubRows = filterByDrr(
       '<td>' + (r.rm || '-') + '</td>' +
       '<td>' + (r.am || '-') + '</td>' +
       cells(r) +
-      capCell(hubNorm, todayDate) +
-      capCell(hubNorm, tomorrowDate) +
-      '<td style="font-weight:600;' + getSuggStyle(sugg) + '">' + sugg + '</td>' +
       '</tr>';
 
     const breachOnlyDates = Object.keys(r.byDate)
@@ -2128,12 +2123,9 @@ const hubRows = filterByDrr(
     body += subHtml;
   });
 
-  const gtSugg = getSuggText(gt);
   body += '<tr class="rt">' +
     '<td colspan="5">GRAND TOTAL</td>' +
     cells(gt) +
-    '<td class="r">—</td><td class="r">—</td>' +
-    '<td style="font-weight:700;' + getSuggStyle(gtSugg) + '">' + gtSugg + '</td>' +
     '</tr></tbody>';
 
   tbl.innerHTML = header + body;
